@@ -184,13 +184,15 @@ resource "null_resource" "upload_configs" {
     timeout     = "5m"
   }
 
-  provisioner "remote-exec" {
-    inline = [
-      "cloud-init status --wait || true",
-      "mkdir -p /opt/rpg-platform",
-      "sudo chown ec2-user:ec2-user /opt/rpg-platform"
-    ]
-  }
+provisioner "remote-exec" {
+  inline = [
+    "cloud-init status --wait || true",
+    "sudo mkdir -p /opt/rpg-platform",
+    "sudo chown ec2-user:ec2-user /opt/rpg-platform",
+    "sudo chmod 755 /opt/rpg-platform",
+    "ls -la /opt/rpg-platform"  
+  ]
+}
 
   provisioner "file" {
     source      = "${path.module}/configs/nginx.conf"
