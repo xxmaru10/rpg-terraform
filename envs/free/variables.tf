@@ -83,3 +83,8 @@ variable "cloudflare_api_token" {
   type      = string
   sensitive = true
 }
+
+variable "dev_allowed_ips" {
+  type    = list(string)
+  default = []
+}

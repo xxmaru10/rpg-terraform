@@ -51,3 +51,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "dev_allowed_ips" {
+  type        = list(string)
+  description = "IPs allowed to connect to dev Postgres"
+  default     = []
+}

@@ -56,3 +56,13 @@ resource "cloudflare_zone_settings_override" "main" {
     security_level           = "essentially_off" 
   }
 }
+
+resource "cloudflare_record" "db_dev" {
+  zone_id = data.cloudflare_zone.main.id
+  name    = "db"
+  content = var.ec2_public_ip
+  type    = "A"
+  proxied = false 
+  ttl     = 60
+  comment = "Dev Postgres — direct connection"
+}

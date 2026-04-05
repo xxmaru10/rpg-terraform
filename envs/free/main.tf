@@ -62,6 +62,7 @@ module "networking" {
   ssh_allowed_cidrs    = var.ssh_allowed_cidrs
   create_rds_sg        = false
   tags                 = local.common_tags
+  dev_allowed_ips      = var.dev_allowed_ips
 }
 
 # ──────────────────────────────────────────────

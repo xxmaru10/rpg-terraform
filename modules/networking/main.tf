@@ -140,6 +140,15 @@ resource "aws_security_group" "ec2" {
     description = "TURN relay media"
   }
 
+  # POSTGRES development
+    ingress {
+    description = "Postgres dev restricted to dev machines"
+    from_port   = 5433
+    to_port     = 5433
+    protocol    = "tcp"
+    cidr_blocks = var.dev_allowed_ips
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -169,7 +178,6 @@ resource "aws_security_group" "rds" {
     security_groups = [aws_security_group.ec2.id]
     description     = "Postgres from EC2"
   }
-
   egress {
     from_port   = 0
     to_port     = 0
