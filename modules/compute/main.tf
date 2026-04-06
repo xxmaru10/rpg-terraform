@@ -203,9 +203,192 @@ provisioner "remote-exec" {
     source      = "${path.module}/configs/turnserver.conf"
     destination = "/opt/rpg-platform/turnserver.conf"
   }
+
+  provisioner "remote-exec" {
+  inline = [
+    "cd /opt/rpg-platform && docker exec rpg-platform-nginx-1 nginx -s reload || true"
+  ]
 }
+}
+
+
 
 resource "aws_iam_role_policy_attachment" "cloudwatch" {
   role       = aws_iam_role.ec2.name
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
+resource "aws_cloudwatch_dashboard" "main" {
+  dashboard_name = "rpg-platform"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title   = "CPU Utilization"
+          region  = var.aws_region
+          period  = 300
+          stat    = "Average"
+          view    = "timeSeries"
+          stacked = false
+          metrics = [
+            ["AWS/EC2", "CPUUtilization", "InstanceId", aws_instance.main.id]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title   = "CPU Credits (t3.small burst)"
+          region  = var.aws_region
+          period  = 300
+          stat    = "Average"
+          view    = "timeSeries"
+          stacked = false
+          metrics = [
+            ["AWS/EC2", "CPUCreditBalance", "InstanceId", aws_instance.main.id],
+            ["AWS/EC2", "CPUCreditUsage", "InstanceId", aws_instance.main.id]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          title   = "Memory Used %"
+          region  = var.aws_region
+          period  = 60
+          stat    = "Average"
+          view    = "timeSeries"
+          stacked = false
+          metrics = [
+            ["RPGPlatform/EC2", "mem_used_percent"]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          title   = "Disk Used % — /data"
+          region  = var.aws_region
+          period  = 60
+          stat    = "Average"
+          view    = "timeSeries"
+          stacked = false
+          metrics = [
+            ["RPGPlatform/EC2", "disk_used_percent", "path", "/data", "device", "nvme1n1", "fstype", "xfs"]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 12
+        width  = 24
+        height = 6
+        properties = {
+          title   = "Network In/Out"
+          region  = var.aws_region
+          period  = 300
+          stat    = "Sum"
+          view    = "timeSeries"
+          stacked = false
+          metrics = [
+            ["AWS/EC2", "NetworkIn", "InstanceId", aws_instance.main.id],
+            ["AWS/EC2", "NetworkOut", "InstanceId", aws_instance.main.id]
+          ]
+        }
+      },
+      {
+        type   = "log"
+        x      = 0
+        y      = 18
+        width  = 24
+        height = 6
+        properties = {
+          title   = "Backend Errors"
+          region  = var.aws_region
+          query   = "SOURCE '/rpg-platform/backend' | fields @timestamp, @message | filter @message like /ERROR/ | sort @timestamp desc | limit 20"
+          view    = "table"
+        }
+      }
+    ]
+  })
+}
+
+# CPU credit running low — t3.small will throttle at 0
+resource "aws_cloudwatch_metric_alarm" "cpu_credits" {
+  alarm_name          = "rpg-cpu-credits-low"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "CPUCreditBalance"
+  namespace           = "AWS/EC2"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 20
+  alarm_description   = "CPU credits running low — instance will throttle"
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    InstanceId = aws_instance.main.id
+  }
+}
+
+# Disk space running out on /data
+resource "aws_cloudwatch_metric_alarm" "disk_space" {
+  alarm_name          = "rpg-disk-space-low"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "disk_used_percent"
+  namespace           = "RPGPlatform/EC2"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 80
+  alarm_description   = "/data volume over 80% full"
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    path = "/data"
+  }
+}
+
+# Instance down
+resource "aws_cloudwatch_metric_alarm" "instance_health" {
+  alarm_name          = "rpg-instance-health"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "StatusCheckFailed"
+  namespace           = "AWS/EC2"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = 0
+  alarm_description   = "EC2 instance health check failed"
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    InstanceId = aws_instance.main.id
+  }
+}
+
+resource "aws_sns_topic" "alerts" {
+  name = "rpg-platform-alerts"
+}
+
+resource "aws_sns_topic_subscription" "email" {
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = "gqueiroz_photo@hotmail.com"
 }

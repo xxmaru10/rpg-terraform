@@ -21,6 +21,16 @@ resource "cloudflare_record" "root" {
   comment = "Frontend — Vercel"
 }
 
+resource "cloudflare_record" "domainverify" {
+  zone_id = data.cloudflare_zone.main.id
+  name    = "_vercel"
+  content = "vc-domain-verify=cronosvtt.com,96dfad16aa5eb2ffbcd5,dc"
+  type    = "TXT"
+  proxied = false
+  ttl     = 600
+  comment = "Vercel Domain verify"
+}
+
 resource "cloudflare_record" "www" {
   zone_id = data.cloudflare_zone.main.id
   name    = "www"
