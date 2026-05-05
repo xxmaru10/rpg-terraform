@@ -48,6 +48,11 @@ variable "turn_secret" {
   description = "Shared secret for Coturn TURN authentication — random string"
 }
 
+variable "turn_realm" {
+  type        = string
+  description = "Realm for Coturn TURN authentication"
+}
+
 variable "domain" {
   type        = string
   default     = "localhost"

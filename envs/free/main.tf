@@ -79,6 +79,18 @@ module "storage" {
 }
 
 # ──────────────────────────────────────────────
+# Backup Storage (S3 — dedicated bucket for PostgreSQL backups)
+# ──────────────────────────────────────────────
+module "backup_storage" {
+  source = "../../modules/backup_storage"
+
+  project     = var.project
+  env         = "free"
+  bucket_name = "${var.project}-postgres-backups-${var.aws_account_id}"
+  tags        = local.common_tags
+}
+
+# ──────────────────────────────────────────────
 # Compute (t2.micro — free tier eligible)
 # ──────────────────────────────────────────────
 module "compute" {
@@ -93,11 +105,13 @@ module "compute" {
   instance_type     = var.instance_type
   ebs_size_gb       = 20
   public_key        = var.public_key
-  s3_bucket_name    = module.storage.bucket_name
+  s3_bucket_name         = module.storage.bucket_name
+  s3_backup_bucket_name  = module.backup_storage.bucket_name
   db_password       = var.db_password
   db_name           = var.db_name
   db_user           = var.db_user
   turn_secret       = var.turn_secret
+  turn_realm        = var.turn_realm
   domain            = var.domain
   nest_api_port     = 3000
   tags              = local.common_tags

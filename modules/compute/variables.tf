@@ -33,6 +33,11 @@ variable "s3_bucket_name" {
   type = string
 }
 
+variable "s3_backup_bucket_name" {
+  type        = string
+  description = "S3 bucket for PostgreSQL backups"
+}
+
 variable "db_password" {
   type      = string
   sensitive = true
@@ -51,6 +56,11 @@ variable "db_user" {
 variable "turn_secret" {
   type      = string
   sensitive = true
+}
+
+variable "turn_realm" {
+  type        = string
+  description = "Realm for Coturn TURN authentication"
 }
 
 variable "domain" {

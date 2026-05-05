@@ -1,0 +1,10 @@
+[Unit]
+Description=RPG Platform PostgreSQL Backup
+Requires=docker.service
+After=docker.service rpg-platform.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/rpg-platform/backup.sh
+StandardOutput=journal
+StandardError=journal

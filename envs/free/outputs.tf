@@ -14,6 +14,11 @@ output "s3_bucket_name" {
   value       = module.storage.bucket_name
 }
 
+output "s3_backup_bucket_name" {
+  description = "S3 bucket for PostgreSQL backups"
+  value       = module.backup_storage.bucket_name
+}
+
 output "api_url" {
   description = "Backend API URL to set in your Next.js NEXT_PUBLIC_API_URL env var"
   value       = "http://${module.compute.instance_public_ip}/api"

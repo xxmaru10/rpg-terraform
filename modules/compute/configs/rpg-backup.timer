@@ -1,0 +1,9 @@
+[Unit]
+Description=RPG Platform Backup Timer (every 3 days)
+
+[Timer]
+OnCalendar=*-*-01/3 02:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

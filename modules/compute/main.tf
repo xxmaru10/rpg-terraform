@@ -45,7 +45,9 @@ resource "aws_iam_role_policy" "s3_access" {
         ]
         Resource = [
           "arn:aws:s3:::${var.s3_bucket_name}",
-          "arn:aws:s3:::${var.s3_bucket_name}/*"
+          "arn:aws:s3:::${var.s3_bucket_name}/*",
+          "arn:aws:s3:::${var.s3_backup_bucket_name}",
+          "arn:aws:s3:::${var.s3_backup_bucket_name}/*"
         ]
       }
     ]
@@ -127,7 +129,9 @@ resource "aws_instance" "main" {
     db_name          = var.db_name
     db_user          = var.db_user
     turn_secret      = var.turn_secret
+    turn_realm       = var.turn_realm
     s3_bucket        = var.s3_bucket_name
+    s3_backup_bucket = var.s3_backup_bucket_name
     aws_region       = var.aws_region
     nest_api_port    = var.nest_api_port
     domain           = var.domain
@@ -171,9 +175,12 @@ resource "null_resource" "upload_configs" {
   depends_on = [aws_volume_attachment.data, aws_eip.main]
 
   triggers = {
-    nginx_hash  = filemd5("${path.module}/configs/nginx.conf")
-    coturn_hash = filemd5("${path.module}/configs/turnserver.conf")
-    instance_id = aws_instance.main.id
+    nginx_hash          = filemd5("${path.module}/configs/nginx.conf")
+    coturn_hash         = filemd5("${path.module}/configs/turnserver.conf")
+    backup_hash         = filemd5("${path.module}/../../scripts/backup.sh")
+    backup_service_hash = filemd5("${path.module}/configs/rpg-backup.service")
+    backup_timer_hash   = filemd5("${path.module}/configs/rpg-backup.timer")
+    instance_id         = aws_instance.main.id
   }
 
   connection {
@@ -184,15 +191,15 @@ resource "null_resource" "upload_configs" {
     timeout     = "5m"
   }
 
-provisioner "remote-exec" {
-  inline = [
-    "cloud-init status --wait || true",
-    "sudo mkdir -p /opt/rpg-platform",
-    "sudo chown ec2-user:ec2-user /opt/rpg-platform",
-    "sudo chmod 755 /opt/rpg-platform",
-    "ls -la /opt/rpg-platform"  
-  ]
-}
+  provisioner "remote-exec" {
+    inline = [
+      "cloud-init status --wait 2>/dev/null || true",
+      "sudo mkdir -p /opt/rpg-platform",
+      "sudo chown ec2-user:ec2-user /opt/rpg-platform",
+      "sudo chmod 755 /opt/rpg-platform",
+      "ls -la /opt/rpg-platform",
+    ]
+  }
 
   provisioner "file" {
     source      = "${path.module}/configs/nginx.conf"
@@ -204,11 +211,39 @@ provisioner "remote-exec" {
     destination = "/opt/rpg-platform/turnserver.conf"
   }
 
+  provisioner "file" {
+    source      = "${path.module}/../../scripts/backup.sh"
+    destination = "/opt/rpg-platform/backup.sh"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/configs/rpg-backup.service"
+    destination = "/opt/rpg-platform/rpg-backup.service"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/configs/rpg-backup.timer"
+    destination = "/opt/rpg-platform/rpg-backup.timer"
+  }
+
   provisioner "remote-exec" {
-  inline = [
-    "cd /opt/rpg-platform && docker exec rpg-platform-nginx-1 nginx -s reload || true"
-  ]
-}
+    inline = [
+      # Reload nginx config
+      "cd /opt/rpg-platform && docker exec rpg-platform-nginx-1 nginx -s reload || true",
+
+      # Ensure S3_BACKUP_BUCKET is in the env file (idempotent for pre-existing instances)
+      "grep -q S3_BACKUP_BUCKET /etc/rpg-platform.env || echo 'S3_BACKUP_BUCKET=${var.s3_backup_bucket_name}' | sudo tee -a /etc/rpg-platform.env",
+
+      # Install backup script and systemd units
+      "chmod +x /opt/rpg-platform/backup.sh",
+      "sudo cp /opt/rpg-platform/rpg-backup.service /etc/systemd/system/rpg-backup.service",
+      "sudo cp /opt/rpg-platform/rpg-backup.timer /etc/systemd/system/rpg-backup.timer",
+      "sudo systemctl daemon-reload",
+      "sudo systemctl enable rpg-backup.timer",
+      "sudo systemctl restart rpg-backup.timer",
+      "echo 'Backup timer installed:' && systemctl list-timers rpg-backup.timer --no-pager",
+    ]
+  }
 }
 
 
