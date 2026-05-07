@@ -1,6 +1,6 @@
 ---
 description: Guidelines for AI agents to work efficiently and reduce token/cost usage when operating on this Terraform repository.
-last_updated: 2026-05-04
+last_updated: 2026-05-05
 ---
 
 # AI Usage Guidelines

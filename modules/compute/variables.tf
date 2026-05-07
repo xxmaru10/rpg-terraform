@@ -104,3 +104,21 @@ variable "supabase_key" {
   type      = string
   sensitive = true
 }
+
+variable "use_spot" {
+  type        = bool
+  default     = false
+  description = "Use spot instances instead of on-demand (cheaper, may be interrupted)"
+}
+
+variable "spot_max_price" {
+  type        = string
+  default     = ""
+  description = "Maximum hourly spot price. Empty = on-demand price cap (recommended)."
+}
+
+variable "enable_backup" {
+  type        = bool
+  default     = true
+  description = "Enable automated PostgreSQL backup timer and provisioners"
+}

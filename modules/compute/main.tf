@@ -108,18 +108,32 @@ resource "aws_ebs_volume" "data" {
 # EC2 Instance
 # ──────────────────────────────────────────────
 resource "aws_instance" "main" {
-  ami                    = data.aws_ami.amazon_linux.id
-  instance_type          = var.instance_type
-  subnet_id              = var.subnet_id
-  vpc_security_group_ids = [var.security_group_id]
-  key_name               = aws_key_pair.main.key_name
-  iam_instance_profile   = aws_iam_instance_profile.ec2.name
+  ami                         = data.aws_ami.amazon_linux.id
+  instance_type               = var.instance_type
+  subnet_id                   = var.subnet_id
+  vpc_security_group_ids      = [var.security_group_id]
+  key_name                    = aws_key_pair.main.key_name
+  iam_instance_profile        = aws_iam_instance_profile.ec2.name
+  associate_public_ip_address = true
 
   root_block_device {
     volume_type           = "gp3"
     volume_size           = 30
     delete_on_termination = true
     encrypted             = true
+  }
+
+  # Spot instance support (dev environments)
+  dynamic "instance_market_options" {
+    for_each = var.use_spot ? [1] : []
+    content {
+      market_type = "spot"
+      spot_options {
+        instance_interruption_behavior = "stop"
+        spot_instance_type             = "persistent"
+        max_price                      = var.spot_max_price != "" ? var.spot_max_price : null
+      }
+    }
   }
 
   user_data = templatefile("${path.module}/user_data.sh.tpl", {
@@ -137,6 +151,7 @@ resource "aws_instance" "main" {
     domain           = var.domain
     supabase_url     = var.supabase_url
     supabase_key     = var.supabase_key
+    enable_backup    = var.enable_backup
   })
 
   tags = merge(var.tags, {
@@ -175,12 +190,9 @@ resource "null_resource" "upload_configs" {
   depends_on = [aws_volume_attachment.data, aws_eip.main]
 
   triggers = {
-    nginx_hash          = filemd5("${path.module}/configs/nginx.conf")
-    coturn_hash         = filemd5("${path.module}/configs/turnserver.conf")
-    backup_hash         = filemd5("${path.module}/../../scripts/backup.sh")
-    backup_service_hash = filemd5("${path.module}/configs/rpg-backup.service")
-    backup_timer_hash   = filemd5("${path.module}/configs/rpg-backup.timer")
-    instance_id         = aws_instance.main.id
+    nginx_hash  = filemd5("${path.module}/configs/nginx.conf")
+    coturn_hash = filemd5("${path.module}/configs/turnserver.conf")
+    instance_id = aws_instance.main.id
   }
 
   connection {
@@ -211,6 +223,36 @@ resource "null_resource" "upload_configs" {
     destination = "/opt/rpg-platform/turnserver.conf"
   }
 
+  provisioner "remote-exec" {
+    inline = [
+      # Reload nginx config
+      "cd /opt/rpg-platform && docker exec rpg-platform-nginx-1 nginx -s reload || true",
+    ]
+  }
+}
+
+# ──────────────────────────────────────────────
+# Backup provisioner (skipped for dev environments)
+# ──────────────────────────────────────────────
+resource "null_resource" "backup_setup" {
+  count      = var.enable_backup ? 1 : 0
+  depends_on = [null_resource.upload_configs]
+
+  triggers = {
+    backup_hash         = filemd5("${path.module}/../../scripts/backup.sh")
+    backup_service_hash = filemd5("${path.module}/configs/rpg-backup.service")
+    backup_timer_hash   = filemd5("${path.module}/configs/rpg-backup.timer")
+    instance_id         = aws_instance.main.id
+  }
+
+  connection {
+    type        = "ssh"
+    user        = "ec2-user"
+    private_key = file(var.ssh_private_key_path)
+    host        = aws_eip.main.public_ip
+    timeout     = "5m"
+  }
+
   provisioner "file" {
     source      = "${path.module}/../../scripts/backup.sh"
     destination = "/opt/rpg-platform/backup.sh"
@@ -228,9 +270,6 @@ resource "null_resource" "upload_configs" {
 
   provisioner "remote-exec" {
     inline = [
-      # Reload nginx config
-      "cd /opt/rpg-platform && docker exec rpg-platform-nginx-1 nginx -s reload || true",
-
       # Ensure S3_BACKUP_BUCKET is in the env file (idempotent for pre-existing instances)
       "grep -q S3_BACKUP_BUCKET /etc/rpg-platform.env || echo 'S3_BACKUP_BUCKET=${var.s3_backup_bucket_name}' | sudo tee -a /etc/rpg-platform.env",
 

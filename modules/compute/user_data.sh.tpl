@@ -101,7 +101,8 @@ SYSTEMD
 
 systemctl daemon-reload
 
-# Backup script is uploaded by Terraform file provisioner (null_resource.upload_configs)
+# Backup script is uploaded by Terraform file provisioner (null_resource.backup_setup)
+%{ if enable_backup ~}
 chmod +x /opt/rpg-platform/backup.sh 2>/dev/null || true
 
 # Systemd service unit for the backup script
@@ -137,6 +138,9 @@ systemctl start rpg-backup.timer
 
 # Run initial backup (safe: backup.sh skips if Postgres is not running yet)
 systemctl start rpg-backup.service || true
+%{ else ~}
+echo "Backup timer disabled for this environment (enable_backup=false)"
+%{ endif ~}
 
 echo "=== Bootstrap Complete ==="
 echo "Instance ready. Run deploy.sh from local machine to push app."

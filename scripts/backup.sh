@@ -41,18 +41,6 @@ aws s3 cp "$BACKUP_FILE" "s3://${S3_BACKUP_BUCKET}/${S3_KEY}" \
 
 echo "  Uploaded: s3://${S3_BACKUP_BUCKET}/${S3_KEY} ✓"
 
-# Keep only last 30 backups in S3
-echo "  Pruning old backups..."
-aws s3 ls "s3://${S3_BACKUP_BUCKET}/backups/postgres/" | \
-  sort | \
-  head -n -30 | \
-  awk '{print $4}' | \
-  while read key; do
-    if [[ -n "$key" ]]; then
-      aws s3 rm "s3://${S3_BACKUP_BUCKET}/backups/postgres/${key}"
-      echo "  Deleted old backup: $key"
-    fi
-  done
-
+# Cleanup: S3 lifecycle handles retention (15 days), no script-side pruning needed
 rm -f "$BACKUP_FILE"
 echo "  Backup complete ✓"

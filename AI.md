@@ -1,7 +1,7 @@
 ---
 repo: rpg-terraform
 language: en
-last_updated: 2026-05-04
+last_updated: 2026-05-07
 ---
 
 # Cronos VTT — Infrastructure (Terraform)
@@ -35,6 +35,7 @@ Keep the context window usage between 50% and 70%.
 | Deploying / CI-CD | `/scripts/deploy.sh`, `/scripts/bootstrap.sh` |
 | Database backup and restore | `/scripts/backup.sh`, `/scripts/migrate-supabase.sh` |
 | Free-tier environment setup | `/envs/free/main.tf`, `/envs/free/variables.tf`, `/envs/free/terraform.tfvars.example` |
+| Dev environment setup | `/envs/dev/main.tf`, `/envs/dev/variables.tf`, `/envs/dev/terraform.tfvars.example` |
 | Production environment setup | `/envs/prod/main.tf`, `/envs/prod/variables.tf` |
 | Nginx / Reverse proxy config | `/modules/compute/configs/nginx.conf` |
 | TURN/STUN (WebRTC) | `/modules/compute/configs/turnserver.conf` |

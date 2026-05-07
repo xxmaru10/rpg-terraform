@@ -36,7 +36,7 @@ resource "aws_s3_bucket_public_access_block" "backups" {
   restrict_public_buckets = true
 }
 
-# Lifecycle: auto-delete backups older than 90 days
+# Lifecycle: auto-delete backups older than 15 days
 resource "aws_s3_bucket_lifecycle_configuration" "backups" {
   bucket = aws_s3_bucket.backups.id
 
@@ -49,7 +49,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "backups" {
     }
 
     expiration {
-      days = 90
+      days = 15
     }
   }
 }

@@ -1,6 +1,6 @@
 ---
 description: Terraform naming conventions, file structure standards, and coding patterns used in the Cronos VTT infrastructure repository.
-last_updated: 2026-05-04
+last_updated: 2026-05-05
 ---
 
 # Conventions
