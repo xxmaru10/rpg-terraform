@@ -151,6 +151,12 @@ if [ -f "$BACKEND_FILE_PROD" ]; then
   echo "    Updated backend bucket in envs/prod/main.tf ✓"
 fi
 
+BACKEND_FILE_DEV="$(dirname "$0")/../envs/dev/main.tf"
+if [ -f "$BACKEND_FILE_DEV" ]; then
+  sed -i.bak "s/rpg-platform-tfstate/${STATE_BUCKET}/g" "$BACKEND_FILE_DEV"
+  echo "    Updated backend bucket in envs/dev/main.tf ✓"
+fi
+
 # ──────────────────────────────────────────────
 # 5. Print next steps
 # ──────────────────────────────────────────────

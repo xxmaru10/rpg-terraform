@@ -34,22 +34,64 @@ resource "aws_iam_role_policy" "s3_access" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          "arn:aws:s3:::${var.s3_bucket_name}",
-          "arn:aws:s3:::${var.s3_bucket_name}/*"
-        ]
-      }
-    ]
+    Statement = concat(
+      [
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:DeleteObject",
+            "s3:ListBucket"
+          ]
+          Resource = [
+            "arn:aws:s3:::${var.s3_bucket_name}",
+            "arn:aws:s3:::${var.s3_bucket_name}/*",
+            "arn:aws:s3:::${var.s3_backup_bucket_name}",
+            "arn:aws:s3:::${var.s3_backup_bucket_name}/*"
+          ]
+        }
+      ],
+      var.free_backup_bucket_name != "" ? [
+        {
+          Sid    = "ReadFreeBackupsForDevSync"
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:ListBucket"
+          ]
+          Resource = [
+            "arn:aws:s3:::${var.free_backup_bucket_name}",
+            "arn:aws:s3:::${var.free_backup_bucket_name}/*"
+          ]
+        }
+      ] : []
+    )
   })
+}
+
+# ──────────────────────────────────────────────
+# CloudWatch Log Groups (env-isolated)
+# ──────────────────────────────────────────────
+resource "aws_cloudwatch_log_group" "backend" {
+  name              = "/rpg-platform/${var.env}/backend"
+  retention_in_days = var.env == "dev" ? 7 : 30
+
+  tags = var.tags
+}
+
+resource "aws_cloudwatch_log_group" "nginx" {
+  name              = "/rpg-platform/${var.env}/nginx"
+  retention_in_days = var.env == "dev" ? 7 : 30
+
+  tags = var.tags
+}
+
+resource "aws_cloudwatch_log_group" "postgres" {
+  name              = "/rpg-platform/${var.env}/postgres"
+  retention_in_days = var.env == "dev" ? 7 : 14
+
+  tags = var.tags
 }
 
 resource "aws_iam_role_policy_attachment" "ecr" {
@@ -106,18 +148,32 @@ resource "aws_ebs_volume" "data" {
 # EC2 Instance
 # ──────────────────────────────────────────────
 resource "aws_instance" "main" {
-  ami                    = data.aws_ami.amazon_linux.id
-  instance_type          = var.instance_type
-  subnet_id              = var.subnet_id
-  vpc_security_group_ids = [var.security_group_id]
-  key_name               = aws_key_pair.main.key_name
-  iam_instance_profile   = aws_iam_instance_profile.ec2.name
+  ami                         = data.aws_ami.amazon_linux.id
+  instance_type               = var.instance_type
+  subnet_id                   = var.subnet_id
+  vpc_security_group_ids      = [var.security_group_id]
+  key_name                    = aws_key_pair.main.key_name
+  iam_instance_profile        = aws_iam_instance_profile.ec2.name
+  associate_public_ip_address = true
 
   root_block_device {
     volume_type           = "gp3"
     volume_size           = 30
     delete_on_termination = true
     encrypted             = true
+  }
+
+  # Spot instance support (dev environments)
+  dynamic "instance_market_options" {
+    for_each = var.use_spot ? [1] : []
+    content {
+      market_type = "spot"
+      spot_options {
+        instance_interruption_behavior = "stop"
+        spot_instance_type             = "persistent"
+        max_price                      = var.spot_max_price != "" ? var.spot_max_price : null
+      }
+    }
   }
 
   user_data = templatefile("${path.module}/user_data.sh.tpl", {
@@ -127,12 +183,15 @@ resource "aws_instance" "main" {
     db_name          = var.db_name
     db_user          = var.db_user
     turn_secret      = var.turn_secret
+    turn_realm       = var.turn_realm
     s3_bucket        = var.s3_bucket_name
+    s3_backup_bucket = var.s3_backup_bucket_name
     aws_region       = var.aws_region
     nest_api_port    = var.nest_api_port
     domain           = var.domain
     supabase_url     = var.supabase_url
     supabase_key     = var.supabase_key
+    enable_backup    = var.enable_backup
   })
 
   tags = merge(var.tags, {
@@ -184,15 +243,15 @@ resource "null_resource" "upload_configs" {
     timeout     = "5m"
   }
 
-provisioner "remote-exec" {
-  inline = [
-    "cloud-init status --wait || true",
-    "sudo mkdir -p /opt/rpg-platform",
-    "sudo chown ec2-user:ec2-user /opt/rpg-platform",
-    "sudo chmod 755 /opt/rpg-platform",
-    "ls -la /opt/rpg-platform"  
-  ]
-}
+  provisioner "remote-exec" {
+    inline = [
+      "cloud-init status --wait 2>/dev/null || true",
+      "sudo mkdir -p /opt/rpg-platform",
+      "sudo chown ec2-user:ec2-user /opt/rpg-platform",
+      "sudo chmod 755 /opt/rpg-platform",
+      "ls -la /opt/rpg-platform",
+    ]
+  }
 
   provisioner "file" {
     source      = "${path.module}/configs/nginx.conf"
@@ -205,10 +264,65 @@ provisioner "remote-exec" {
   }
 
   provisioner "remote-exec" {
-  inline = [
-    "cd /opt/rpg-platform && docker exec rpg-platform-nginx-1 nginx -s reload || true"
-  ]
+    inline = [
+      # Reload nginx config
+      "cd /opt/rpg-platform && docker exec rpg-platform-nginx-1 nginx -s reload || true",
+    ]
+  }
 }
+
+# ──────────────────────────────────────────────
+# Backup provisioner (skipped for dev environments)
+# ──────────────────────────────────────────────
+resource "null_resource" "backup_setup" {
+  count      = var.enable_backup ? 1 : 0
+  depends_on = [null_resource.upload_configs]
+
+  triggers = {
+    backup_hash         = filemd5("${path.module}/../../scripts/backup.sh")
+    backup_service_hash = filemd5("${path.module}/configs/rpg-backup.service")
+    backup_timer_hash   = filemd5("${path.module}/configs/rpg-backup.timer")
+    instance_id         = aws_instance.main.id
+  }
+
+  connection {
+    type        = "ssh"
+    user        = "ec2-user"
+    private_key = file(var.ssh_private_key_path)
+    host        = aws_eip.main.public_ip
+    timeout     = "5m"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/../../scripts/backup.sh"
+    destination = "/opt/rpg-platform/backup.sh"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/configs/rpg-backup.service"
+    destination = "/opt/rpg-platform/rpg-backup.service"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/configs/rpg-backup.timer"
+    destination = "/opt/rpg-platform/rpg-backup.timer"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      # Ensure S3_BACKUP_BUCKET is in the env file (idempotent for pre-existing instances)
+      "grep -q S3_BACKUP_BUCKET /etc/rpg-platform.env || echo 'S3_BACKUP_BUCKET=${var.s3_backup_bucket_name}' | sudo tee -a /etc/rpg-platform.env",
+
+      # Install backup script and systemd units
+      "chmod +x /opt/rpg-platform/backup.sh",
+      "sudo cp /opt/rpg-platform/rpg-backup.service /etc/systemd/system/rpg-backup.service",
+      "sudo cp /opt/rpg-platform/rpg-backup.timer /etc/systemd/system/rpg-backup.timer",
+      "sudo systemctl daemon-reload",
+      "sudo systemctl enable rpg-backup.timer",
+      "sudo systemctl restart rpg-backup.timer",
+      "echo 'Backup timer installed:' && systemctl list-timers rpg-backup.timer --no-pager",
+    ]
+  }
 }
 
 
@@ -219,7 +333,7 @@ resource "aws_iam_role_policy_attachment" "cloudwatch" {
 }
 
 resource "aws_cloudwatch_dashboard" "main" {
-  dashboard_name = "rpg-platform"
+  dashboard_name = "${var.project}-${var.env}"
 
   dashboard_body = jsonencode({
     widgets = [
@@ -324,7 +438,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title   = "Backend Errors"
           region  = var.aws_region
-          query   = "SOURCE '/rpg-platform/backend' | fields @timestamp, @message | filter @message like /ERROR/ | sort @timestamp desc | limit 20"
+          query   = "SOURCE '${aws_cloudwatch_log_group.backend.name}' | fields @timestamp, @message | filter @message like /ERROR/ | sort @timestamp desc | limit 20"
           view    = "table"
         }
       }
@@ -334,7 +448,7 @@ resource "aws_cloudwatch_dashboard" "main" {
 
 # CPU credit running low — t3.small will throttle at 0
 resource "aws_cloudwatch_metric_alarm" "cpu_credits" {
-  alarm_name          = "rpg-cpu-credits-low"
+  alarm_name          = "${var.project}-${var.env}-cpu-credits-low"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 2
   metric_name         = "CPUCreditBalance"
@@ -351,7 +465,7 @@ resource "aws_cloudwatch_metric_alarm" "cpu_credits" {
 
 # Disk space running out on /data
 resource "aws_cloudwatch_metric_alarm" "disk_space" {
-  alarm_name          = "rpg-disk-space-low"
+  alarm_name          = "${var.project}-${var.env}-disk-space-low"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "disk_used_percent"
@@ -368,7 +482,7 @@ resource "aws_cloudwatch_metric_alarm" "disk_space" {
 
 # Instance down
 resource "aws_cloudwatch_metric_alarm" "instance_health" {
-  alarm_name          = "rpg-instance-health"
+  alarm_name          = "${var.project}-${var.env}-instance-health"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
   metric_name         = "StatusCheckFailed"
@@ -384,7 +498,7 @@ resource "aws_cloudwatch_metric_alarm" "instance_health" {
 }
 
 resource "aws_sns_topic" "alerts" {
-  name = "rpg-platform-alerts"
+  name = "${var.project}-${var.env}-alerts"
 }
 
 resource "aws_sns_topic_subscription" "email" {

@@ -1,0 +1,36 @@
+# envs/dev/terraform.tfvars.example
+# Copy to terraform.tfvars and fill in your values
+# NEVER commit terraform.tfvars to git
+
+project        = "rpg-platform"
+aws_region     = "us-east-1"
+aws_account_id = "306337361114"  # Your 12-digit AWS account ID
+
+# Reuse the same SSH key as free (or generate a separate one)
+# Generate: ssh-keygen -t ed25519 -C "rpg-platform-dev"
+public_key = "ssh-ed25519 AAAA... rpg-platform-ec2"
+
+# Restrict to your IP: curl ifconfig.me
+ssh_allowed_cidrs = ["YOUR_IP/32"]
+instance_type     = "t3.micro"
+
+supabase_url = "https://your-supabase-url.supabase.co"
+supabase_key = "your-supabase-anon-key"
+
+# Generate strong passwords: openssl rand -hex 32
+db_password = "GENERATE_A_NEW_PASSWORD_HERE"
+db_name     = "rpgplatform_dev"
+db_user     = "rpgadmin"
+turn_secret = "GENERATE_A_NEW_SECRET_HERE"
+turn_realm  = "cronosvttrealmrtc"
+
+cors_allowed_origins = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "https://dev-api.cronosvtt.com"
+]
+
+dev_allowed_ips = ["YOUR_IP/32"]
+
+domain               = "cronosvtt.com"
+cloudflare_api_token = "your-cloudflare-api-token"

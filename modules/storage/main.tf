@@ -80,7 +80,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "assets" {
 }
 
 resource "aws_s3_bucket_policy" "public_uploads" {
-  bucket = aws_s3_bucket.assets.id
+  bucket     = aws_s3_bucket.assets.id
+  depends_on = [aws_s3_bucket_public_access_block.assets]
 
   policy = jsonencode({
     Version = "2012-10-17"

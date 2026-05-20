@@ -15,3 +15,21 @@ variable "cloudflare_api_token" {
   sensitive   = true
   description = "Cloudflare API token — create at dash.cloudflare.com/profile/api-tokens"
 }
+
+variable "subdomain_prefix" {
+  type        = string
+  default     = ""
+  description = "Prefix for DNS subdomains (e.g. 'dev-' produces dev-api, dev-db)"
+}
+
+variable "create_frontend_records" {
+  type        = bool
+  default     = true
+  description = "Create root, www, and _vercel DNS records (disable for non-primary envs)"
+}
+
+variable "manage_zone_settings" {
+  type        = bool
+  default     = true
+  description = "Apply zone-level settings (SSL, TLS, brotli, etc). Only primary env should do this."
+}

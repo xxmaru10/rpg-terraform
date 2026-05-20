@@ -53,8 +53,9 @@ if ! grep -q "$${UUID}" /etc/fstab; then
   echo "UUID=$${UUID} $${DATA_MOUNT} xfs defaults,nofail 0 2" >> /etc/fstab
 fi
 
-mkdir -p "$${DATA_MOUNT}"/{postgres,uploads,coturn-logs}
+mkdir -p "$${DATA_MOUNT}"/{postgres,postgres-dev,uploads,coturn-logs}
 chown -R 999:999 "$${DATA_MOUNT}/postgres"
+chown -R 999:999 "$${DATA_MOUNT}/postgres-dev"
 
 cat > /etc/rpg-platform.env <<EOF
 PROJECT=${project}
@@ -64,13 +65,15 @@ POSTGRES_USER=${db_user}
 POSTGRES_PASSWORD=${db_password}
 DATABASE_URL=postgresql://${db_user}:${db_password}@postgres:5432/${db_name}
 TURN_SECRET=${turn_secret}
-TURN_REALM=${domain}
+TURN_REALM=${turn_realm}
 AWS_REGION=${aws_region}
 S3_BUCKET=${s3_bucket}
+S3_BACKUP_BUCKET=${s3_backup_bucket}
 NEST_API_PORT=${nest_api_port}
 NODE_ENV=production
 SUPABASE_URL=${supabase_url}
 SUPABASE_KEY=${supabase_key}
+LOG_GROUP_PREFIX=${env == "dev" ? "/rpg-platform/dev" : "/rpg-platform"}
 EOF
 
 chmod 600 /etc/rpg-platform.env
@@ -100,26 +103,46 @@ SYSTEMD
 
 systemctl daemon-reload
 
-cat > /opt/rpg-platform/backup.sh <<'BACKUP'
-#!/bin/bash
-source /etc/rpg-platform.env
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-BACKUP_FILE="/tmp/rpg-backup-$TIMESTAMP.sql.gz"
-CONTAINER=$(docker ps -qf name=postgres)
-if [ -z "$CONTAINER" ]; then
-  echo "[$TIMESTAMP] Postgres not running, skipping"
-  exit 0
-fi
-docker exec "$CONTAINER" pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" | \
-  gzip > "$BACKUP_FILE"
-aws s3 cp "$BACKUP_FILE" "s3://$S3_BUCKET/backups/postgres/$TIMESTAMP.sql.gz" \
-  --storage-class STANDARD_IA
-rm -f "$BACKUP_FILE"
-echo "[$TIMESTAMP] Backup complete"
-BACKUP
+# Backup script is uploaded by Terraform file provisioner (null_resource.backup_setup)
+%{ if enable_backup ~}
+chmod +x /opt/rpg-platform/backup.sh 2>/dev/null || true
 
-chmod +x /opt/rpg-platform/backup.sh
-echo "0 2 * * * /opt/rpg-platform/backup.sh >> /var/log/rpg-backup.log 2>&1" | crontab -
+# Systemd service unit for the backup script
+cat > /etc/systemd/system/rpg-backup.service <<'BACKUP_SVC'
+[Unit]
+Description=RPG Platform PostgreSQL Backup
+Requires=docker.service
+After=docker.service rpg-platform.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/rpg-platform/backup.sh
+StandardOutput=journal
+StandardError=journal
+BACKUP_SVC
+
+# Systemd timer unit — daily at 02:00 UTC
+cat > /etc/systemd/system/rpg-backup.timer <<'BACKUP_TMR'
+[Unit]
+Description=RPG Platform Backup Timer (daily)
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+BACKUP_TMR
+
+systemctl daemon-reload
+systemctl enable rpg-backup.timer
+systemctl start rpg-backup.timer
+
+# Run initial backup (safe: backup.sh skips if Postgres is not running yet)
+systemctl start rpg-backup.service || true
+%{ else ~}
+echo "Backup timer disabled for this environment (enable_backup=false)"
+%{ endif ~}
 
 echo "=== Bootstrap Complete ==="
 echo "Instance ready. Run deploy.sh from local machine to push app."

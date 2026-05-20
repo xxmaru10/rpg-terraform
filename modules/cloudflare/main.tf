@@ -12,6 +12,7 @@ data "cloudflare_zone" "main" {
 }
 
 resource "cloudflare_record" "root" {
+  count   = var.create_frontend_records ? 1 : 0
   zone_id = data.cloudflare_zone.main.id
   name    = "@"
   content = "216.198.79.1"
@@ -22,6 +23,7 @@ resource "cloudflare_record" "root" {
 }
 
 resource "cloudflare_record" "domainverify" {
+  count   = var.create_frontend_records ? 1 : 0
   zone_id = data.cloudflare_zone.main.id
   name    = "_vercel"
   content = "vc-domain-verify=cronosvtt.com,96dfad16aa5eb2ffbcd5,dc"
@@ -32,6 +34,7 @@ resource "cloudflare_record" "domainverify" {
 }
 
 resource "cloudflare_record" "www" {
+  count   = var.create_frontend_records ? 1 : 0
   zone_id = data.cloudflare_zone.main.id
   name    = "www"
   content = "216.198.79.1"
@@ -43,15 +46,16 @@ resource "cloudflare_record" "www" {
 
 resource "cloudflare_record" "api" {
   zone_id = data.cloudflare_zone.main.id
-  name    = "api"
+  name    = "${var.subdomain_prefix}api"
   content = var.ec2_public_ip
   type    = "A"
   proxied = true
   ttl     = 1
-  comment = "Backend API — EC2"
+  comment = "${var.subdomain_prefix != "" ? "Dev " : ""}Backend API — EC2"
 }
 
 resource "cloudflare_zone_settings_override" "main" {
+  count   = var.manage_zone_settings ? 1 : 0
   zone_id = data.cloudflare_zone.main.id
 
   settings {
@@ -69,10 +73,10 @@ resource "cloudflare_zone_settings_override" "main" {
 
 resource "cloudflare_record" "db_dev" {
   zone_id = data.cloudflare_zone.main.id
-  name    = "db"
+  name    = "${var.subdomain_prefix}db"
   content = var.ec2_public_ip
   type    = "A"
   proxied = false 
   ttl     = 60
-  comment = "Dev Postgres — direct connection"
+  comment = "${var.subdomain_prefix != "" ? "Dev env " : "Dev "}Postgres — direct connection"
 }

@@ -33,6 +33,17 @@ variable "s3_bucket_name" {
   type = string
 }
 
+variable "s3_backup_bucket_name" {
+  type        = string
+  description = "S3 bucket for PostgreSQL backups"
+}
+
+variable "free_backup_bucket_name" {
+  type        = string
+  default     = ""
+  description = "S3 bucket of the free/prod environment. When set, this EC2 gets read-only access (for dev→prod DB sync)."
+}
+
 variable "db_password" {
   type      = string
   sensitive = true
@@ -51,6 +62,11 @@ variable "db_user" {
 variable "turn_secret" {
   type      = string
   sensitive = true
+}
+
+variable "turn_realm" {
+  type        = string
+  description = "Realm for Coturn TURN authentication"
 }
 
 variable "domain" {
@@ -93,4 +109,22 @@ variable "supabase_url" {
 variable "supabase_key" {
   type      = string
   sensitive = true
+}
+
+variable "use_spot" {
+  type        = bool
+  default     = false
+  description = "Use spot instances instead of on-demand (cheaper, may be interrupted)"
+}
+
+variable "spot_max_price" {
+  type        = string
+  default     = ""
+  description = "Maximum hourly spot price. Empty = on-demand price cap (recommended)."
+}
+
+variable "enable_backup" {
+  type        = bool
+  default     = true
+  description = "Enable automated PostgreSQL backup timer and provisioners"
 }

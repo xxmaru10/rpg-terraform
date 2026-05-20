@@ -1,8 +1,8 @@
-# envs/free/variables.tf
+# envs/dev/variables.tf
 
 variable "project" {
   type    = string
-  default = "rpgplatform"
+  default = "rpg-platform"
 }
 
 variable "aws_region" {
@@ -23,18 +23,18 @@ variable "public_key" {
 variable "ssh_allowed_cidrs" {
   type        = list(string)
   description = "Your IP address for SSH access. Get it: curl ifconfig.me"
-  default     = ["0.0.0.0/0"] # REPLACE with your IP/32 for security
+  default     = ["0.0.0.0/0"]
 }
 
 variable "db_password" {
   type        = string
   sensitive   = true
-  description = "PostgreSQL password — use a strong random string"
+  description = "PostgreSQL password for the dev database"
 }
 
 variable "db_name" {
   type    = string
-  default = "rpgplatform"
+  default = "rpgplatform_dev"
 }
 
 variable "db_user" {
@@ -45,7 +45,7 @@ variable "db_user" {
 variable "turn_secret" {
   type        = string
   sensitive   = true
-  description = "Shared secret for Coturn TURN authentication — random string"
+  description = "Shared secret for Coturn TURN authentication"
 }
 
 variable "turn_realm" {
@@ -55,13 +55,17 @@ variable "turn_realm" {
 
 variable "domain" {
   type        = string
-  default     = "localhost"
-  description = "Domain for SSL cert and TURN realm. Use EC2 public IP initially."
+  default     = "cronosvtt.com"
+  description = "Root domain — dev subdomains (dev-api, dev-db) are created under this"
 }
 
 variable "cors_allowed_origins" {
   type    = list(string)
-  default = ["https://*.vercel.app", "http://localhost:3000", "http://localhost:3001"]
+  default = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://dev-api.cronosvtt.com"
+  ]
 }
 
 variable "instance_type" {
@@ -71,7 +75,7 @@ variable "instance_type" {
 
 variable "ssh_private_key_path" {
   type    = string
-  default = "~/.ssh/rpg-platform"
+  default = "~/.ssh/id_ed25519"
 }
 
 variable "supabase_url" {
@@ -92,4 +96,9 @@ variable "cloudflare_api_token" {
 variable "dev_allowed_ips" {
   type    = list(string)
   default = []
+}
+
+variable "free_backup_bucket_name" {
+  type        = string
+  description = "S3 bucket of the free environment used for dev→prod DB sync. Set in terraform.tfvars."
 }
