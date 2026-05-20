@@ -38,6 +38,12 @@ variable "s3_backup_bucket_name" {
   description = "S3 bucket for PostgreSQL backups"
 }
 
+variable "free_backup_bucket_name" {
+  type        = string
+  default     = ""
+  description = "S3 bucket of the free/prod environment. When set, this EC2 gets read-only access (for dev→prod DB sync)."
+}
+
 variable "db_password" {
   type      = string
   sensitive = true

@@ -105,8 +105,9 @@ module "compute" {
   instance_type     = var.instance_type
   ebs_size_gb       = 10
   public_key        = var.public_key
-  s3_bucket_name         = module.storage.bucket_name
-  s3_backup_bucket_name  = module.backup_storage.bucket_name
+  s3_bucket_name          = module.storage.bucket_name
+  s3_backup_bucket_name   = module.backup_storage.bucket_name
+  free_backup_bucket_name = var.free_backup_bucket_name
   db_password       = var.db_password
   db_name           = var.db_name
   db_user           = var.db_user
@@ -119,8 +120,9 @@ module "compute" {
   supabase_key      = var.supabase_key
 
   # Dev-specific: spot instance, no backups
-  use_spot       = true
-  enable_backup  = false
+  use_spot              = true
+  enable_backup         = false
+  ssh_private_key_path  = var.ssh_private_key_path
 }
 
 # ──────────────────────────────────────────────

@@ -75,7 +75,7 @@ variable "instance_type" {
 
 variable "ssh_private_key_path" {
   type    = string
-  default = "~/.ssh/rpg-platform"
+  default = "~/.ssh/id_ed25519"
 }
 
 variable "supabase_url" {
@@ -96,4 +96,9 @@ variable "cloudflare_api_token" {
 variable "dev_allowed_ips" {
   type    = list(string)
   default = []
+}
+
+variable "free_backup_bucket_name" {
+  type        = string
+  description = "S3 bucket of the free environment used for dev→prod DB sync. Set in terraform.tfvars."
 }

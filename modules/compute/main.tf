@@ -34,24 +34,64 @@ resource "aws_iam_role_policy" "s3_access" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          "arn:aws:s3:::${var.s3_bucket_name}",
-          "arn:aws:s3:::${var.s3_bucket_name}/*",
-          "arn:aws:s3:::${var.s3_backup_bucket_name}",
-          "arn:aws:s3:::${var.s3_backup_bucket_name}/*"
-        ]
-      }
-    ]
+    Statement = concat(
+      [
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:DeleteObject",
+            "s3:ListBucket"
+          ]
+          Resource = [
+            "arn:aws:s3:::${var.s3_bucket_name}",
+            "arn:aws:s3:::${var.s3_bucket_name}/*",
+            "arn:aws:s3:::${var.s3_backup_bucket_name}",
+            "arn:aws:s3:::${var.s3_backup_bucket_name}/*"
+          ]
+        }
+      ],
+      var.free_backup_bucket_name != "" ? [
+        {
+          Sid    = "ReadFreeBackupsForDevSync"
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:ListBucket"
+          ]
+          Resource = [
+            "arn:aws:s3:::${var.free_backup_bucket_name}",
+            "arn:aws:s3:::${var.free_backup_bucket_name}/*"
+          ]
+        }
+      ] : []
+    )
   })
+}
+
+# ──────────────────────────────────────────────
+# CloudWatch Log Groups (env-isolated)
+# ──────────────────────────────────────────────
+resource "aws_cloudwatch_log_group" "backend" {
+  name              = "/rpg-platform/${var.env}/backend"
+  retention_in_days = var.env == "dev" ? 7 : 30
+
+  tags = var.tags
+}
+
+resource "aws_cloudwatch_log_group" "nginx" {
+  name              = "/rpg-platform/${var.env}/nginx"
+  retention_in_days = var.env == "dev" ? 7 : 30
+
+  tags = var.tags
+}
+
+resource "aws_cloudwatch_log_group" "postgres" {
+  name              = "/rpg-platform/${var.env}/postgres"
+  retention_in_days = var.env == "dev" ? 7 : 14
+
+  tags = var.tags
 }
 
 resource "aws_iam_role_policy_attachment" "ecr" {
@@ -293,7 +333,7 @@ resource "aws_iam_role_policy_attachment" "cloudwatch" {
 }
 
 resource "aws_cloudwatch_dashboard" "main" {
-  dashboard_name = "rpg-platform"
+  dashboard_name = "${var.project}-${var.env}"
 
   dashboard_body = jsonencode({
     widgets = [
@@ -398,7 +438,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title   = "Backend Errors"
           region  = var.aws_region
-          query   = "SOURCE '/rpg-platform/backend' | fields @timestamp, @message | filter @message like /ERROR/ | sort @timestamp desc | limit 20"
+          query   = "SOURCE '${aws_cloudwatch_log_group.backend.name}' | fields @timestamp, @message | filter @message like /ERROR/ | sort @timestamp desc | limit 20"
           view    = "table"
         }
       }
@@ -408,7 +448,7 @@ resource "aws_cloudwatch_dashboard" "main" {
 
 # CPU credit running low — t3.small will throttle at 0
 resource "aws_cloudwatch_metric_alarm" "cpu_credits" {
-  alarm_name          = "rpg-cpu-credits-low"
+  alarm_name          = "${var.project}-${var.env}-cpu-credits-low"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 2
   metric_name         = "CPUCreditBalance"
@@ -425,7 +465,7 @@ resource "aws_cloudwatch_metric_alarm" "cpu_credits" {
 
 # Disk space running out on /data
 resource "aws_cloudwatch_metric_alarm" "disk_space" {
-  alarm_name          = "rpg-disk-space-low"
+  alarm_name          = "${var.project}-${var.env}-disk-space-low"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "disk_used_percent"
@@ -442,7 +482,7 @@ resource "aws_cloudwatch_metric_alarm" "disk_space" {
 
 # Instance down
 resource "aws_cloudwatch_metric_alarm" "instance_health" {
-  alarm_name          = "rpg-instance-health"
+  alarm_name          = "${var.project}-${var.env}-instance-health"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
   metric_name         = "StatusCheckFailed"
@@ -458,7 +498,7 @@ resource "aws_cloudwatch_metric_alarm" "instance_health" {
 }
 
 resource "aws_sns_topic" "alerts" {
-  name = "rpg-platform-alerts"
+  name = "${var.project}-${var.env}-alerts"
 }
 
 resource "aws_sns_topic_subscription" "email" {

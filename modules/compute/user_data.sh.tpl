@@ -53,8 +53,9 @@ if ! grep -q "$${UUID}" /etc/fstab; then
   echo "UUID=$${UUID} $${DATA_MOUNT} xfs defaults,nofail 0 2" >> /etc/fstab
 fi
 
-mkdir -p "$${DATA_MOUNT}"/{postgres,uploads,coturn-logs}
+mkdir -p "$${DATA_MOUNT}"/{postgres,postgres-dev,uploads,coturn-logs}
 chown -R 999:999 "$${DATA_MOUNT}/postgres"
+chown -R 999:999 "$${DATA_MOUNT}/postgres-dev"
 
 cat > /etc/rpg-platform.env <<EOF
 PROJECT=${project}
@@ -72,6 +73,7 @@ NEST_API_PORT=${nest_api_port}
 NODE_ENV=production
 SUPABASE_URL=${supabase_url}
 SUPABASE_KEY=${supabase_key}
+LOG_GROUP_PREFIX=${env == "dev" ? "/rpg-platform/dev" : "/rpg-platform"}
 EOF
 
 chmod 600 /etc/rpg-platform.env
@@ -119,13 +121,13 @@ StandardOutput=journal
 StandardError=journal
 BACKUP_SVC
 
-# Systemd timer unit — every 3 days at 02:00 UTC
+# Systemd timer unit — daily at 02:00 UTC
 cat > /etc/systemd/system/rpg-backup.timer <<'BACKUP_TMR'
 [Unit]
-Description=RPG Platform Backup Timer (every 3 days)
+Description=RPG Platform Backup Timer (daily)
 
 [Timer]
-OnCalendar=*-*-01/3 02:00:00
+OnCalendar=*-*-* 02:00:00
 Persistent=true
 
 [Install]

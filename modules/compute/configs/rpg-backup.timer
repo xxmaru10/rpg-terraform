@@ -1,8 +1,8 @@
 [Unit]
-Description=RPG Platform Backup Timer (every 3 days)
+Description=RPG Platform Backup Timer (daily)
 
 [Timer]
-OnCalendar=*-*-01/3 02:00:00
+OnCalendar=*-*-* 02:00:00
 Persistent=true
 
 [Install]
